@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LogOut, Menu, X, Home, DollarSign, Users, BarChart3, Package } from 'lucide-react'
+import { LogOut, Menu, X, Home, DollarSign, Users, BarChart3, Package, ExternalLink } from 'lucide-react'
 import { signOut } from '../lib/supabase'
 
 export default function DashboardLayout({ children, currentTab, setCurrentTab, user }) {
@@ -41,6 +41,15 @@ export default function DashboardLayout({ children, currentTab, setCurrentTab, u
             </div>
 
             <div className="flex items-center space-x-4">
+              <a
+                href="https://abdulvasi-dashboard.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm hover:shadow-md"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span className="text-sm font-medium">Posts Dashboard</span>
+              </a>
               <div className="hidden sm:block text-sm text-gray-600">
                 {user?.email}
               </div>
