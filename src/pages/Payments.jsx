@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { Plus, Edit2, Trash2, DollarSign, Calendar, TrendingUp, X, Save } from 'lucide-react'
+import { Plus, Edit2, Trash2, DollarSign, TrendingUp, Calendar, X, Save, AlertCircle } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns'
 
 export default function Payments({ user }) {
@@ -27,13 +27,11 @@ export default function Payments({ user }) {
   const fetchData = async () => {
     setLoading(true)
 
-    // Fetch clients
     const { data: clientsData } = await supabase
       .from('clients')
       .select('*')
       .order('name')
 
-    // Fetch payments
     const { data: paymentsData } = await supabase
       .from('payments')
       .select('*, clients(name)')
@@ -116,14 +114,13 @@ export default function Payments({ user }) {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'paid': return 'bg-green-100 text-green-800'
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'overdue': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'paid': return 'bg-green-100 text-green-800 border-green-200'
+      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+      case 'overdue': return 'bg-red-100 text-red-800 border-red-200'
+      default: return 'bg-gray-100 text-gray-800 border-gray-200'
     }
   }
 
-  // Calculate statistics for selected month
   const monthStart = startOfMonth(new Date(selectedMonth + '-01'))
   const monthEnd = endOfMonth(new Date(selectedMonth + '-01'))
 
@@ -145,6 +142,14 @@ export default function Payments({ user }) {
     .reduce((sum, p) => sum + parseFloat(p.amount), 0)
 
   const totalExpected = totalReceived + totalPending
+
+  // Get upcoming payments (next 7 days)
+  const today = new Date()
+  const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const upcomingPayments = payments.filter(p => {
+    const dueDate = new Date(p.due_date)
+    return p.status === 'pending' && dueDate >= today && dueDate <= nextWeek
+  })
 
   if (loading) {
     return <div className="text-center py-12">Loading...</div>
@@ -171,13 +176,43 @@ export default function Payments({ user }) {
         </div>
       </div>
 
+      {/* Upcoming Payments Alert */}
+      {upcomingPayments.length > 0 && (
+        <div className="card bg-orange-50 border-orange-200">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-orange-900">Upcoming Payments</h3>
+              <p className="text-sm text-orange-700 mt-1">
+                {upcomingPayments.length} payment{upcomingPayments.length > 1 ? 's' : ''} due in the next 7 days
+              </p>
+              <div className="mt-2 space-y-1">
+                {upcomingPayments.slice(0, 3).map(payment => (
+                  <div key={payment.id} className="text-sm text-orange-800">
+                    • {payment.clients.name}: ₹{parseFloat(payment.amount).toLocaleString()} - {format(new Date(payment.due_date), 'MMM d')}
+                  </div>
+                ))}
+                {upcomingPayments.length > 3 && (
+                  <div className="text-sm text-orange-700">
+                    + {upcomingPayments.length - 3} more
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Monthly Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-green-700">Received</p>
-              <p className="text-2xl font-bold text-green-900">₹{totalReceived.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-green-900">₹{totalReceived.toLocaleString()}</p>
+              <p className="text-xs text-green-600 mt-1">
+                {monthlyPayments.filter(p => p.status === 'paid').length} payments
+              </p>
             </div>
             <DollarSign className="w-8 h-8 text-green-600" />
           </div>
@@ -187,7 +222,10 @@ export default function Payments({ user }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-yellow-700">Pending</p>
-              <p className="text-2xl font-bold text-yellow-900">₹{totalPending.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-yellow-900">₹{totalPending.toLocaleString()}</p>
+              <p className="text-xs text-yellow-600 mt-1">
+                {monthlyPayments.filter(p => p.status === 'pending').length} payments
+              </p>
             </div>
             <Calendar className="w-8 h-8 text-yellow-600" />
           </div>
@@ -197,9 +235,12 @@ export default function Payments({ user }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-red-700">Overdue</p>
-              <p className="text-2xl font-bold text-red-900">₹{totalOverdue.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-red-900">₹{totalOverdue.toLocaleString()}</p>
+              <p className="text-xs text-red-600 mt-1">
+                {monthlyPayments.filter(p => p.status === 'overdue').length} payments
+              </p>
             </div>
-            <TrendingUp className="w-8 h-8 text-red-600" />
+            <AlertCircle className="w-8 h-8 text-red-600" />
           </div>
         </div>
 
@@ -207,7 +248,10 @@ export default function Payments({ user }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-blue-700">Expected Total</p>
-              <p className="text-2xl font-bold text-blue-900">₹{totalExpected.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-blue-900">₹{totalExpected.toLocaleString()}</p>
+              <p className="text-xs text-blue-600 mt-1">
+                {Math.round((totalReceived / totalExpected) * 100)}% collected
+              </p>
             </div>
             <TrendingUp className="w-8 h-8 text-blue-600" />
           </div>
@@ -337,11 +381,16 @@ export default function Payments({ user }) {
             <tbody>
               {monthlyPayments.map(payment => (
                 <tr key={payment.id} className="border-b hover:bg-gray-50">
-                  <td className="py-3 px-4 font-medium">{payment.clients.name}</td>
-                  <td className="py-3 px-4">₹{parseFloat(payment.amount).toFixed(2)}</td>
+                  <td className="py-3 px-4 font-medium">
+                    {payment.clients.name}
+                    {payment.auto_generated && (
+                      <span className="ml-2 text-xs text-blue-600">🔄 Auto</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">₹{parseFloat(payment.amount).toLocaleString()}</td>
                   <td className="py-3 px-4">{format(new Date(payment.due_date), 'MMM dd, yyyy')}</td>
                   <td className="py-3 px-4">
-                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor(payment.status)}`}>
+                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium border ${getStatusColor(payment.status)}`}>
                       {payment.status}
                     </span>
                   </td>
