@@ -162,17 +162,31 @@ export default function Clients({ user }) {
   }
 
   const saveRecurringBilling = async () => {
-    const { error } = await supabase
-      .from('clients')
-      .update(recurringData)
-      .eq('id', showRecurringModal)
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .update(recurringData)
+        .eq('id', showRecurringModal)
 
-    if (!error) {
+      if (error) {
+        console.error('Error updating billing:', error)
+        alert('Error updating billing settings: ' + error.message)
+        return
+      }
+
       // Generate initial recurring payments
-      await supabase.rpc('generate_recurring_payments')
+      const { error: rpcError } = await supabase.rpc('generate_recurring_payments')
+      
+      if (rpcError) {
+        console.error('Error generating payments:', rpcError)
+      }
       
       fetchClients()
       setShowRecurringModal(null)
+      alert('Recurring billing updated successfully!')
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      alert('An unexpected error occurred')
     }
   }
 
