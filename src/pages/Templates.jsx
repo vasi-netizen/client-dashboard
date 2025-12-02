@@ -23,6 +23,7 @@ export default function Templates({ user }) {
   const [showAddTemplate, setShowAddTemplate] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [openDropdown, setOpenDropdown] = useState(null)
 
   const [formData, setFormData] = useState({
     template_name: '',
@@ -112,6 +113,7 @@ export default function Templates({ user }) {
     )
 
     await Promise.all(taskPromises)
+    setOpenDropdown(null)
     alert(`Template "${template.template_name}" applied successfully!`)
   }
 
@@ -357,28 +359,39 @@ export default function Templates({ user }) {
                 )}
               </div>
 
-              <div className="relative group">
-                <button className="w-full btn btn-primary flex items-center justify-center space-x-2">
+              <div className="relative">
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === template.id ? null : template.id)}
+                  className="w-full btn btn-primary flex items-center justify-center space-x-2"
+                >
                   <Copy className="w-4 h-4" />
                   <span>Apply to Client</span>
                 </button>
                 
-                <div className="hidden group-hover:block absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {clients.map(client => (
-                    <button
-                      key={client.id}
-                      onClick={() => applyToClient(template, client.id)}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm"
-                    >
-                      {client.name}
-                    </button>
-                  ))}
-                  {clients.length === 0 && (
-                    <div className="px-4 py-2 text-sm text-gray-500">
-                      No clients available
+                {openDropdown === template.id && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setOpenDropdown(null)}
+                    />
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                      {clients.map(client => (
+                        <button
+                          key={client.id}
+                          onClick={() => applyToClient(template, client.id)}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm border-b last:border-b-0"
+                        >
+                          {client.name}
+                        </button>
+                      ))}
+                      {clients.length === 0 && (
+                        <div className="px-4 py-2 text-sm text-gray-500">
+                          No clients available
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
             </div>
           )
