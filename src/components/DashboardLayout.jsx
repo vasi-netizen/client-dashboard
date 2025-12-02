@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LogOut, Menu, X, Home, DollarSign, Settings, Users } from 'lucide-react'
+import { LogOut, Menu, X, Home, DollarSign, Users, BarChart3, Package } from 'lucide-react'
 import { signOut } from '../lib/supabase'
 
 export default function DashboardLayout({ children, currentTab, setCurrentTab, user }) {
@@ -13,6 +13,8 @@ export default function DashboardLayout({ children, currentTab, setCurrentTab, u
     { id: 'tasks', name: 'Daily Tasks', icon: Home },
     { id: 'clients', name: 'Clients', icon: Users },
     { id: 'payments', name: 'Payments', icon: DollarSign },
+    { id: 'analytics', name: 'Analytics', icon: BarChart3 },
+    { id: 'templates', name: 'Templates', icon: Package },
   ]
 
   return (
