@@ -1,7 +1,23 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { CheckCircle2, Circle, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, Circle, Plus, Trash2, RefreshCw, Filter, StickyNote, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
+import TaskNotesModal from '../components/TaskNotesModal'
+
+const PRIORITIES = {
+  urgent: { label: 'Urgent', color: 'bg-red-100 text-red-800 border-red-200', icon: '🔴' },
+  high: { label: 'High', color: 'bg-orange-100 text-orange-800 border-orange-200', icon: '🟡' },
+  medium: { label: 'Medium', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: '🔵' },
+  low: { label: 'Low', color: 'bg-gray-100 text-gray-800 border-gray-200', icon: '⚪' }
+}
+
+const CATEGORIES = {
+  seo: { label: 'SEO', color: 'bg-purple-100 text-purple-800', icon: '📊' },
+  content: { label: 'Content', color: 'bg-green-100 text-green-800', icon: '✍️' },
+  social_media: { label: 'Social Media', color: 'bg-pink-100 text-pink-800', icon: '📱' },
+  technical: { label: 'Technical', color: 'bg-indigo-100 text-indigo-800', icon: '🔧' },
+  admin: { label: 'Admin', color: 'bg-gray-100 text-gray-800', icon: '📋' }
+}
 
 export default function DailyTasks({ user }) {
   const [clients, setClients] = useState([])
@@ -9,6 +25,11 @@ export default function DailyTasks({ user }) {
   const [specialTasks, setSpecialTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [newSpecialTask, setNewSpecialTask] = useState('')
+  const [selectedPriority, setSelectedPriority] = useState('all')
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)
+  const [selectedTask, setSelectedTask] = useState(null)
+  const [showNotesModal, setShowNotesModal] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -17,26 +38,22 @@ export default function DailyTasks({ user }) {
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch clients
       const { data: clientsData } = await supabase
         .from('clients')
         .select('*')
         .order('name')
 
-      // Fetch task templates
       const { data: templatesData } = await supabase
         .from('task_templates')
         .select('*')
-        .order('created_at')
+        .order('priority', { ascending: false })
 
-      // Fetch today's task completions
       const today = format(new Date(), 'yyyy-MM-dd')
       const { data: completionsData } = await supabase
         .from('task_completions')
         .select('*')
         .eq('completion_date', today)
 
-      // Fetch special tasks
       const { data: specialTasksData } = await supabase
         .from('special_tasks')
         .select('*')
@@ -44,10 +61,8 @@ export default function DailyTasks({ user }) {
         .order('created_at', { ascending: false })
 
       setClients(clientsData || [])
-      setTasks(templatesData || [])
       setSpecialTasks(specialTasksData || [])
 
-      // Mark tasks as completed if they exist in today's completions
       if (templatesData && completionsData) {
         const completedTaskIds = completionsData.map(c => c.task_template_id)
         setTasks(templatesData.map(task => ({
@@ -66,7 +81,6 @@ export default function DailyTasks({ user }) {
     const today = format(new Date(), 'yyyy-MM-dd')
 
     if (!currentStatus) {
-      // Mark as complete
       const { error } = await supabase
         .from('task_completions')
         .insert({
@@ -82,7 +96,6 @@ export default function DailyTasks({ user }) {
         ))
       }
     } else {
-      // Mark as incomplete
       const { error } = await supabase
         .from('task_completions')
         .delete()
@@ -137,6 +150,11 @@ export default function DailyTasks({ user }) {
     }
   }
 
+  const openNotesModal = (task) => {
+    setSelectedTask(task)
+    setShowNotesModal(true)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -145,35 +163,105 @@ export default function DailyTasks({ user }) {
     )
   }
 
+  // Filter tasks
+  let filteredTasks = tasks
+  if (selectedPriority !== 'all') {
+    filteredTasks = filteredTasks.filter(task => task.priority === selectedPriority)
+  }
+  if (selectedCategory !== 'all') {
+    filteredTasks = filteredTasks.filter(task => task.category === selectedCategory)
+  }
+
   // Group tasks by client
   const tasksByClient = clients.map(client => ({
     ...client,
-    tasks: tasks.filter(task => task.client_id === client.id)
+    tasks: filteredTasks.filter(task => task.client_id === client.id)
   })).filter(client => client.tasks.length > 0)
 
   const pendingTasks = tasksByClient.filter(client => 
     client.tasks.some(task => !task.completed)
   )
 
+  // Calculate stats
+  const totalTasks = filteredTasks.length
+  const completedTasks = filteredTasks.filter(t => t.completed).length
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Daily Tasks</h1>
           <p className="text-gray-600 mt-1">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
+          <div className="flex items-center space-x-4 mt-2 text-sm">
+            <span className="text-gray-600">
+              {completedTasks}/{totalTasks} completed ({completionRate}%)
+            </span>
+          </div>
         </div>
-        <button
-          onClick={fetchData}
-          className="btn btn-secondary flex items-center space-x-2"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>Refresh</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`btn ${showFilters ? 'btn-primary' : 'btn-secondary'} flex items-center space-x-2`}
+          >
+            <Filter className="w-4 h-4" />
+            <span>Filters</span>
+          </button>
+          <button
+            onClick={fetchData}
+            className="btn btn-secondary flex items-center space-x-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
+
+      {/* Filters */}
+      {showFilters && (
+        <div className="card">
+          <h3 className="font-semibold mb-3">Filter Tasks</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Priority</label>
+              <select
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                className="input"
+              >
+                <option value="all">All Priorities</option>
+                {Object.entries(PRIORITIES).map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value.icon} {value.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Category</label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="input"
+              >
+                <option value="all">All Categories</option>
+                {Object.entries(CATEGORIES).map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value.icon} {value.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Special Tasks */}
       <div className="card">
-        <h2 className="text-xl font-bold mb-4 text-purple-600">Special Tasks</h2>
+        <h2 className="text-xl font-bold mb-4 text-purple-600 flex items-center">
+          <AlertCircle className="w-5 h-5 mr-2" />
+          Special Tasks
+        </h2>
         <div className="space-y-3">
           <div className="flex space-x-2">
             <input
@@ -190,7 +278,7 @@ export default function DailyTasks({ user }) {
           </div>
 
           {specialTasks.map(task => (
-            <div key={task.id} className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+            <div key={task.id} className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
               <div className="flex items-center space-x-3 flex-1">
                 <button
                   onClick={() => completeSpecialTask(task.id)}
@@ -238,20 +326,46 @@ export default function DailyTasks({ user }) {
               </div>
 
               <div className="space-y-2">
-                {client.tasks.filter(task => !task.completed).map(task => (
-                  <div
-                    key={task.id}
-                    className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <button
-                      onClick={() => toggleTaskCompletion(task.id, task.completed, client.id)}
-                      className="text-gray-400 hover:text-green-600 transition-colors"
+                {client.tasks.filter(task => !task.completed).map(task => {
+                  const priority = PRIORITIES[task.priority] || PRIORITIES.medium
+                  const category = CATEGORIES[task.category] || CATEGORIES.admin
+                  
+                  return (
+                    <div
+                      key={task.id}
+                      className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
                     >
-                      <Circle className="w-5 h-5" />
-                    </button>
-                    <span className="text-gray-800 flex-1">{task.description}</span>
-                  </div>
-                ))}
+                      <button
+                        onClick={() => toggleTaskCompletion(task.id, task.completed, client.id)}
+                        className="text-gray-400 hover:text-green-600 transition-colors flex-shrink-0"
+                      >
+                        <Circle className="w-5 h-5" />
+                      </button>
+                      
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className={`text-xs px-2 py-1 rounded font-medium border ${priority.color}`}>
+                            {priority.icon} {priority.label}
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded font-medium ${category.color}`}>
+                            {category.icon} {category.label}
+                          </span>
+                        </div>
+                        <span className="text-gray-800">{task.description}</span>
+                        {task.notes && (
+                          <p className="text-xs text-gray-500 mt-1">{task.notes}</p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => openNotesModal(task)}
+                        className="text-gray-500 hover:text-primary-600 flex-shrink-0"
+                      >
+                        <StickyNote className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -261,7 +375,31 @@ export default function DailyTasks({ user }) {
           <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">All Done! 🎉</h3>
           <p className="text-gray-600">You've completed all your tasks for today.</p>
+          {(selectedPriority !== 'all' || selectedCategory !== 'all') && (
+            <button
+              onClick={() => {
+                setSelectedPriority('all')
+                setSelectedCategory('all')
+              }}
+              className="btn btn-secondary mt-4"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
+      )}
+
+      {/* Task Notes Modal */}
+      {showNotesModal && selectedTask && (
+        <TaskNotesModal
+          task={selectedTask}
+          onClose={() => {
+            setShowNotesModal(false)
+            setSelectedTask(null)
+            fetchData()
+          }}
+          userId={user.id}
+        />
       )}
     </div>
   )
