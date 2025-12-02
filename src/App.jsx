@@ -5,6 +5,8 @@ import DashboardLayout from './components/DashboardLayout'
 import DailyTasks from './pages/DailyTasks'
 import Clients from './pages/Clients'
 import Payments from './pages/Payments'
+import Analytics from './pages/Analytics'
+import Templates from './pages/Templates'
 
 function App() {
   const { user, loading } = useAuth()
@@ -30,6 +32,8 @@ function App() {
       {currentTab === 'tasks' && <DailyTasks user={user} />}
       {currentTab === 'clients' && <Clients user={user} />}
       {currentTab === 'payments' && <Payments user={user} />}
+      {currentTab === 'analytics' && <Analytics user={user} />}
+      {currentTab === 'templates' && <Templates user={user} />}
     </DashboardLayout>
   )
 }
