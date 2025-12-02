@@ -1,6 +1,6 @@
 {
   "name": "client-dashboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,9 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.1",
     "lucide-react": "^0.294.0",
-    "date-fns": "^3.0.0"
+    "date-fns": "^3.0.0",
+    "recharts": "^2.10.3",
+    "resend": "^3.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
