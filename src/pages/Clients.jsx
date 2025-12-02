@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { Plus, Edit2, Trash2, Globe, Mail, Phone, Save, X, CheckCircle } from 'lucide-react'
+import { Plus, Edit2, Trash2, Globe, Mail, Phone, Save, X, CheckCircle, DollarSign, Calendar, RefreshCw } from 'lucide-react'
+
+const PRIORITIES = {
+  urgent: { label: 'Urgent', icon: '🔴' },
+  high: { label: 'High', icon: '🟡' },
+  medium: { label: 'Medium', icon: '🔵' },
+  low: { label: 'Low', icon: '⚪' }
+}
+
+const CATEGORIES = {
+  seo: { label: 'SEO', icon: '📊' },
+  content: { label: 'Content', icon: '✍️' },
+  social_media: { label: 'Social Media', icon: '📱' },
+  technical: { label: 'Technical', icon: '🔧' },
+  admin: { label: 'Admin', icon: '📋' }
+}
 
 export default function Clients({ user }) {
   const [clients, setClients] = useState([])
@@ -8,6 +23,7 @@ export default function Clients({ user }) {
   const [showAddClient, setShowAddClient] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
   const [showTaskModal, setShowTaskModal] = useState(null)
+  const [showRecurringModal, setShowRecurringModal] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const [formData, setFormData] = useState({
@@ -20,7 +36,21 @@ export default function Clients({ user }) {
     notes: ''
   })
 
-  const [newTask, setNewTask] = useState('')
+  const [recurringData, setRecurringData] = useState({
+    recurring_billing: false,
+    billing_amount: '',
+    billing_frequency: 'monthly',
+    billing_day: 15,
+    billing_start_date: new Date().toISOString().split('T')[0],
+    billing_active: true
+  })
+
+  const [newTask, setNewTask] = useState({
+    description: '',
+    priority: 'medium',
+    category: 'admin',
+    notes: ''
+  })
 
   useEffect(() => {
     fetchClients()
@@ -44,7 +74,7 @@ export default function Clients({ user }) {
       .from('task_templates')
       .select('*')
       .eq('client_id', clientId)
-      .order('created_at')
+      .order('priority', { ascending: false })
 
     setTaskTemplates(data || [])
     setShowTaskModal(clientId)
@@ -76,7 +106,7 @@ export default function Clients({ user }) {
   }
 
   const deleteClient = async (id) => {
-    if (confirm('Are you sure you want to delete this client? All associated tasks will be deleted.')) {
+    if (confirm('Are you sure you want to delete this client? All associated tasks and payments will be deleted.')) {
       const { error } = await supabase
         .from('clients')
         .delete()
@@ -89,18 +119,21 @@ export default function Clients({ user }) {
   }
 
   const addTask = async () => {
-    if (!newTask.trim() || !showTaskModal) return
+    if (!newTask.description.trim() || !showTaskModal) return
 
     const { error } = await supabase
       .from('task_templates')
       .insert({
         client_id: showTaskModal,
-        description: newTask,
+        description: newTask.description,
+        priority: newTask.priority,
+        category: newTask.category,
+        notes: newTask.notes,
         user_id: user.id
       })
 
     if (!error) {
-      setNewTask('')
+      setNewTask({ description: '', priority: 'medium', category: 'admin', notes: '' })
       fetchTasksForClient(showTaskModal)
     }
   }
@@ -113,6 +146,33 @@ export default function Clients({ user }) {
 
     if (!error) {
       fetchTasksForClient(showTaskModal)
+    }
+  }
+
+  const openRecurringModal = async (client) => {
+    setRecurringData({
+      recurring_billing: client.recurring_billing || false,
+      billing_amount: client.billing_amount || '',
+      billing_frequency: client.billing_frequency || 'monthly',
+      billing_day: client.billing_day || 15,
+      billing_start_date: client.billing_start_date || new Date().toISOString().split('T')[0],
+      billing_active: client.billing_active !== false
+    })
+    setShowRecurringModal(client.id)
+  }
+
+  const saveRecurringBilling = async () => {
+    const { error } = await supabase
+      .from('clients')
+      .update(recurringData)
+      .eq('id', showRecurringModal)
+
+    if (!error) {
+      // Generate initial recurring payments
+      await supabase.rpc('generate_recurring_payments')
+      
+      fetchClients()
+      setShowRecurringModal(null)
     }
   }
 
@@ -272,9 +332,16 @@ export default function Clients({ user }) {
             <div className="flex justify-between items-start mb-3">
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-gray-900">{client.name}</h3>
-                <span className={`inline-block px-2 py-1 rounded text-xs font-medium mt-1 ${getStatusColor(client.status)}`}>
-                  {client.status}
-                </span>
+                <div className="flex items-center space-x-2 mt-1">
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor(client.status)}`}>
+                    {client.status}
+                  </span>
+                  {client.recurring_billing && (
+                    <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      💳 Recurring
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex space-x-1">
                 <button
@@ -323,18 +390,42 @@ export default function Clients({ user }) {
               )}
             </div>
 
+            {client.recurring_billing && (
+              <div className="mt-3 pt-3 border-t border-gray-200 text-sm">
+                <div className="flex items-center justify-between text-gray-700">
+                  <span className="font-medium">Billing:</span>
+                  <span>₹{parseFloat(client.billing_amount || 0).toLocaleString()}/{client.billing_frequency}</span>
+                </div>
+                <div className="flex items-center justify-between text-gray-600 text-xs mt-1">
+                  <span>Next: Day {client.billing_day}</span>
+                  <span className={client.billing_active ? 'text-green-600' : 'text-red-600'}>
+                    {client.billing_active ? 'Active' : 'Paused'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {client.notes && (
               <p className="mt-3 text-sm text-gray-600 border-t pt-3">
                 {client.notes}
               </p>
             )}
 
-            <button
-              onClick={() => fetchTasksForClient(client.id)}
-              className="mt-4 w-full btn btn-secondary text-sm"
-            >
-              Manage Tasks
-            </button>
+            <div className="mt-4 flex space-x-2">
+              <button
+                onClick={() => fetchTasksForClient(client.id)}
+                className="flex-1 btn btn-secondary text-sm"
+              >
+                Manage Tasks
+              </button>
+              <button
+                onClick={() => openRecurringModal(client)}
+                className="flex-1 btn btn-secondary text-sm flex items-center justify-center space-x-1"
+              >
+                <DollarSign className="w-4 h-4" />
+                <span>Billing</span>
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -351,7 +442,7 @@ export default function Clients({ user }) {
       {/* Task Management Modal */}
       {showTaskModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center">
               <h2 className="text-xl font-bold">
                 Manage Tasks - {clients.find(c => c.id === showTaskModal)?.name}
@@ -365,44 +456,232 @@ export default function Clients({ user }) {
             </div>
 
             <div className="p-6">
-              <div className="flex space-x-2 mb-4">
+              <div className="mb-4 space-y-3">
                 <input
                   type="text"
-                  value={newTask}
-                  onChange={(e) => setNewTask(e.target.value)}
+                  value={newTask.description}
+                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
                   onKeyPress={(e) => e.key === 'Enter' && addTask()}
-                  placeholder="Add a daily task..."
-                  className="input flex-1"
+                  placeholder="Task description..."
+                  className="input"
                 />
-                <button onClick={addTask} className="btn btn-primary">
-                  <Plus className="w-5 h-5" />
-                </button>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label text-xs">Priority</label>
+                    <select
+                      value={newTask.priority}
+                      onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                      className="input text-sm"
+                    >
+                      {Object.entries(PRIORITIES).map(([key, value]) => (
+                        <option key={key} value={key}>
+                          {value.icon} {value.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label text-xs">Category</label>
+                    <select
+                      value={newTask.category}
+                      onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
+                      className="input text-sm"
+                    >
+                      {Object.entries(CATEGORIES).map(([key, value]) => (
+                        <option key={key} value={key}>
+                          {value.icon} {value.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <button onClick={addTask} className="btn btn-primary w-full">
+                      <Plus className="w-5 h-5 mx-auto" />
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  value={newTask.notes}
+                  onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
+                  placeholder="Quick notes (optional)..."
+                  className="input text-sm"
+                />
               </div>
 
               <div className="space-y-2">
-                {taskTemplates.map(task => (
-                  <div
-                    key={task.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="text-gray-800">{task.description}</span>
-                    </div>
-                    <button
-                      onClick={() => deleteTask(task.id)}
-                      className="text-red-500 hover:text-red-700"
+                {taskTemplates.map(task => {
+                  const priority = PRIORITIES[task.priority] || PRIORITIES.medium
+                  const category = CATEGORIES[task.category] || CATEGORIES.admin
+                  
+                  return (
+                    <div
+                      key={task.id}
+                      className="flex items-start justify-between p-3 bg-gray-50 rounded-lg"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-800">
+                            {priority.icon} {priority.label}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                            {category.icon} {category.label}
+                          </span>
+                        </div>
+                        <span className="text-gray-800">{task.description}</span>
+                        {task.notes && (
+                          <p className="text-xs text-gray-500 mt-1">{task.notes}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="text-red-500 hover:text-red-700 ml-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )
+                })}
 
                 {taskTemplates.length === 0 && (
                   <p className="text-gray-500 text-center py-8">
                     No tasks yet. Add tasks that need to be done daily for this client.
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recurring Billing Modal */}
+      {showRecurringModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full">
+            <div className="border-b p-6 flex justify-between items-center">
+              <h2 className="text-xl font-bold">Recurring Billing Setup</h2>
+              <button
+                onClick={() => setShowRecurringModal(null)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="recurring"
+                  checked={recurringData.recurring_billing}
+                  onChange={(e) => setRecurringData({ ...recurringData, recurring_billing: e.target.checked })}
+                  className="w-5 h-5 text-primary-600"
+                />
+                <label htmlFor="recurring" className="font-medium text-gray-900">
+                  Enable Recurring Billing
+                </label>
+              </div>
+
+              {recurringData.recurring_billing && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Billing Amount (₹) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        className="input"
+                        value={recurringData.billing_amount}
+                        onChange={(e) => setRecurringData({ ...recurringData, billing_amount: e.target.value })}
+                        placeholder="10000.00"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="label">Frequency</label>
+                      <select
+                        className="input"
+                        value={recurringData.billing_frequency}
+                        onChange={(e) => setRecurringData({ ...recurringData, billing_frequency: e.target.value })}
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="label">Billing Day (1-31)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        className="input"
+                        value={recurringData.billing_day}
+                        onChange={(e) => setRecurringData({ ...recurringData, billing_day: parseInt(e.target.value) })}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Day of month for payment</p>
+                    </div>
+
+                    <div>
+                      <label className="label">Start Date</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={recurringData.billing_start_date}
+                        onChange={(e) => setRecurringData({ ...recurringData, billing_start_date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-3 pt-3 border-t">
+                    <input
+                      type="checkbox"
+                      id="active"
+                      checked={recurringData.billing_active}
+                      onChange={(e) => setRecurringData({ ...recurringData, billing_active: e.target.checked })}
+                      className="w-5 h-5 text-primary-600"
+                    />
+                    <label htmlFor="active" className="text-sm text-gray-700">
+                      Billing is active (uncheck to pause)
+                    </label>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                    <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      How It Works
+                    </h4>
+                    <ul className="text-sm text-blue-800 space-y-1">
+                      <li>• Payments will be auto-generated 3 months ahead</li>
+                      <li>• They will appear in your Payments tab as "Pending"</li>
+                      <li>• Just update status to "Paid" when you receive payment</li>
+                      <li>• System checks daily and creates new payments automatically</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <button
+                  onClick={() => setShowRecurringModal(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveRecurringBilling}
+                  className="btn btn-primary flex items-center space-x-2"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Billing Setup</span>
+                </button>
               </div>
             </div>
           </div>
